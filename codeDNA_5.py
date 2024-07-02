@@ -3,6 +3,14 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 
 
+# Сейчас никаких грубых ошибок уже нет, поэтому комментарии будут касаться, можно сказать, принципов программирования.
+#
+# Исходная задача стояла в написании класса, который неким образом работает с геномной последовательностью, в нашем
+# случае – извлекает контекст метилирования. Но ведь в теории, например, мы могли бы расширить данный класс, чтобы он
+# считал количество нуклеотидов или другую статистику на основании последовательности. Вопрос: насколько Ваш класс
+# пригоден для масштабирования?
+#
+# Ниже будут комментарии, которые ответят на вышепоставленный вопрос.
 class SeqDNA:
     """
     Класс для анализа ДНК.
@@ -16,6 +24,7 @@ class SeqDNA:
 
     def __init__(self, path_file) -> str:
         self.path_file = path_file
+        # Все эти списки лучше не создавать здесь.
         self.position_plus = []
         self.position_minus = []
         self.context_plus = []
@@ -25,13 +34,19 @@ class SeqDNA:
         self.chromosome_plus = []
         self.chromosome_minus = []
 
+    # Вот функция называется read_file, а файла в качестве параметра не получает. Возникает дилема – либо класс называть
+    # SeqFile, а метод read, и позиционировать класс – как класс для работы с *файлом* последовательности, либо убирать
+    # path_file из аттрибутов и добавлять его в параметр этой функции (лично я бы сделал 2 вариант).
     def read_file(self):
         """
         Функция читает файл.FASTA и возвращает интерируемый объект,
         содержащий данные всех хромосом в файле.
         """
-        records = [record for record in SeqIO.parse(self.path_file, 'fasta')]
-        for i in records:
+        # Зачем хранить в памяти лишние последовательности и сразу читать все хромосомы, если мы можем итерировать сразу?
+        # records = [record for record in SeqIO.parse(self.path_file, 'fasta')]
+        # for i in records:
+
+        for i in SeqIO.parse(self.path_file, 'fasta'):
             self.context_identification(i.name, i.seq.upper())
         data_frame1 = pl.DataFrame(
             {
@@ -51,15 +66,23 @@ class SeqDNA:
                 'trinuc': self.trinuc_minus
             }
         )
+        # Пусть лучше context_identification возвращает таблицу – сразу и +, и - нити в ней будут. Потом список из
+        # таблиц для каждой хромосомы соединим методом pl.concat
+
         df = pl.concat(
             [data_frame1, data_frame2], how='vertical'
         ).write_csv('DNA_5.tsv')
         return df
 
+    # Чем меньше функция имеет доступа к внешним для себя объектам – тем лучше! Данную функцию в принципе можно было бы
+    # сделать статичной (@staticmethod), ведь если бы все эти списки, которые создаются у Вас в __init__, создавались бы
+    # здесь, то функции бы вообще не потребовалось знать, что там происходит в остальном классе, а это всегда упрощает
+    # отладку.
     def context_identification(self, name_chr, sequence) -> tuple:
         """Поиск цитозинов и контекстов метилирования ДНК."""
         for i in range(0, len(sequence) - 3):
             if sequence[i] == 'C':
+                # Посмотрите на условия. Можно ли их расположить в другом порядке, чтобы сравнений было меньше?
                 if sequence[i + 1] != 'G' and sequence[i + 2] != 'G':
                     self.context_plus.append('CHH')
                 elif sequence[i + 1] != 'G' and sequence[i + 2] == 'G':
@@ -69,6 +92,7 @@ class SeqDNA:
                 self.position_plus.append(i)
                 self.trinuc_plus.append(str(sequence[i: i + 3]))
                 self.chromosome_plus.append(name_chr)
+            # Отлично!
             if sequence[i + 2] == 'G':
                 if sequence[i] != 'C' and sequence[i + 1] != 'C':
                     self.context_minus.append('CHH')
@@ -80,6 +104,7 @@ class SeqDNA:
                 trinuc = Seq(sequence[i: i + 3]).reverse_complement()
                 self.trinuc_minus.append(str(trinuc))
                 self.chromosome_minus.append(name_chr)
+        # Почему бы здесь нам не возвращать DataFrame сразу?
         return (
             self.position_plus.copy(), self.context_plus.copy(),
             self.trinuc_plus.copy(), self.chromosome_plus.copy(),
